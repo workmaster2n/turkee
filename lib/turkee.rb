@@ -21,6 +21,45 @@ module Turkee
 
     scope :unprocessed_hits, :conditions => ['complete = ?', false]
 
+    def self.get_all_hits
+      begin
+        # Using a lockfile to prevent multiple calls to Amazon.
+        Lockfile.new('/tmp/turk_hits.lock', :max_age => 3600, :retries => 10) do
+
+          turks = task_items(turkee_task)
+          hits = []
+
+          turks.each do |turk|
+            hit = RTurk::Hit.new(turk.hit_id)
+            hits.push(hit)
+
+            models = []
+            hit.assignments.each do |assignment|
+              next unless submitted?(assignment.status)
+              next unless TurkeeImportedAssignment.find_by_assignment_id(assignment.id).nil?
+
+              params = assignment_params(assignment.answers)
+              param_hash = Rack::Utils.parse_nested_query(params)
+              model = find_model(param_hash)
+
+              next if model.nil?
+              puts "param_hash = #{param_hash}"
+              model.create(param_hash[model.to_s.underscore])
+
+              TurkeeImportedAssignment.create(:assignment_id => assignment.id) rescue nil
+            end
+
+            check_hit_completeness(hit, turk, models)
+            hits
+
+          end
+        end
+      rescue Lockfile::MaxTriesLockError => e
+        logger.info "TurkTask.get_all_hits is already running or the lockfile /tmp/turk_hits.lock exists from an improperly shutdown previous process. Exiting method call."
+      end
+
+    end
+
     # Use this method to go out and retrieve the data for all of the posted Turk Tasks.
     #  Each specific TurkeeTask object (determined by task_type field) is in charge of
     #  accepting/rejecting the assignment and importing the data into their respective tables.
