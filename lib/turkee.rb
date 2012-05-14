@@ -26,7 +26,7 @@ module Turkee
         # Using a lockfile to prevent multiple calls to Amazon.
         Lockfile.new('/tmp/turk_hits.lock', :max_age => 3600, :retries => 10) do
 
-          turks = task_items(turkee_task)
+          turks = task_items(nil)
           hits = []
 
           turks.each do |turk|
