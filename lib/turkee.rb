@@ -17,21 +17,19 @@ module Turkee
     attr_accessible :sandbox, :hit_title, :hit_description, :hit_reward, :hit_num_assignments, :hit_lifetime,
                     :form_url, :hit_url, :hit_id, :task_type, :complete
 
-    HIT_FRAMEHEIGHT     = 1000
+    HIT_FRAMEHEIGHT = 1000
 
     scope :unprocessed_hits, :conditions => ['complete = ?', false]
 
-    def self.get_all_hits
+    def self.build_models
       begin
         # Using a lockfile to prevent multiple calls to Amazon.
         Lockfile.new('/tmp/turk_hits.lock', :max_age => 3600, :retries => 10) do
 
           turks = task_items(nil)
-          hits = []
 
           turks.each do |turk|
             hit = RTurk::Hit.new(turk.hit_id)
-            hits.push(hit)
 
             models = []
             hit.assignments.each do |assignment|
@@ -50,14 +48,11 @@ module Turkee
             end
 
             check_hit_completeness(hit, turk, models)
-            hits
-
           end
         end
       rescue Lockfile::MaxTriesLockError => e
         logger.info "TurkTask.get_all_hits is already running or the lockfile /tmp/turk_hits.lock exists from an improperly shutdown previous process. Exiting method call."
       end
-
     end
 
     # Use this method to go out and retrieve the data for all of the posted Turk Tasks.
@@ -72,16 +67,16 @@ module Turkee
           turks = task_items(turkee_task)
 
           turks.each do |turk|
-            hit   = RTurk::Hit.new(turk.hit_id)
+            hit = RTurk::Hit.new(turk.hit_id)
 
             models = []
             hit.assignments.each do |assignment|
               next unless submitted?(assignment.status)
               next unless TurkeeImportedAssignment.find_by_assignment_id(assignment.id).nil?
 
-              params     = assignment_params(assignment.answers)
+              params = assignment_params(assignment.answers)
               param_hash = Rack::Utils.parse_nested_query(params)
-              model      = find_model(param_hash)
+              model = find_model(param_hash)
 
               next if model.nil?
               puts "param_hash = #{param_hash}"
@@ -106,15 +101,15 @@ module Turkee
     # Creates a new Mechanical Turk task on AMZN with the given title, desc, etc
     def self.create_hit(host, hit_title, hit_description, typ, num_assignments, reward, lifetime, qualifications = {}, params = {}, opts = {})
 
-      model    = Object::const_get(typ)
+      model = Object::const_get(typ)
       duration = lifetime.to_i
-      f_url    = (full_url(opts[:form_url], params) || form_url(host, model, params))
+      f_url = (full_url(opts[:form_url], params) || form_url(host, model, params))
 
       h = RTurk::Hit.create(:title => hit_title) do |hit|
         hit.assignments = num_assignments
         hit.description = hit_description
-        hit.reward      = reward
-        hit.lifetime    = duration.days.seconds.to_i
+        hit.reward = reward
+        hit.lifetime = duration.days.seconds.to_i
         hit.question(f_url, :frame_height => HIT_FRAMEHEIGHT)
         unless qualifications.empty?
           qualifications.each do |key, value|
@@ -123,12 +118,12 @@ module Turkee
         end
       end
 
-      TurkeeTask.create(:sandbox             => RTurk.sandbox?,
-                        :hit_title           => hit_title,    :hit_description     => hit_description,
-                        :hit_reward          => reward.to_f,  :hit_num_assignments => num_assignments.to_i,
-                        :hit_lifetime        => lifetime,     :form_url            => f_url,
-                        :hit_url             => h.url,        :hit_id              => h.id,
-                        :task_type           => typ,          :complete            => false)
+      TurkeeTask.create(:sandbox => RTurk.sandbox?,
+                        :hit_title => hit_title, :hit_description => hit_description,
+                        :hit_reward => reward.to_f, :hit_num_assignments => num_assignments.to_i,
+                        :hit_lifetime => lifetime, :form_url => f_url,
+                        :hit_url => h.url, :hit_id => h.id,
+                        :task_type => typ, :complete => false)
 
     end
 
@@ -263,13 +258,13 @@ module Turkee
       options[:html] ||= {}
 
       case record
-      when String, Symbol
-        object_name = record
-        object      = nil
-      else
-        object      = record.is_a?(Array) ? record.last : record
-        object_name = options[:as] || ActiveModel::Naming.param_key(object)
-        apply_form_for_options!(record, options)
+        when String, Symbol
+          object_name = record
+          object = nil
+        else
+          object = record.is_a?(Array) ? record.last : record
+          object_name = options[:as] || ActiveModel::Naming.param_key(object)
+          apply_form_for_options!(record, options)
       end
 
       options[:html][:remote] = options.delete(:remote) if options.has_key?(:remote)
@@ -278,10 +273,10 @@ module Turkee
 
       builder = options[:parent_builder] = instantiate_builder(object_name, object, options, &proc)
       fields_for = fields_for(object_name, object, options, &proc)
-      default_options = builder.multipart? ? { :multipart => true } : {}
+      default_options = builder.multipart? ? {:multipart => true} : {}
 
       output = form_tag(mturk_url, default_options.merge!(options.delete(:html)))
-      params.each do |k,v|
+      params.each do |k, v|
         unless k =~ /^action$/i || k =~ /^controller$/i || v.class != String
           output.safe_concat("<input type=\"hidden\" id=\"#{k}\" name=\"#{CGI.escape(k)}\" value=\"#{CGI.escape(v)}\"/>")
         end
